@@ -1,5 +1,7 @@
 import { env } from "@/env";
 
+export const AUTH_UNAUTHORIZED_EVENT = "telegram-files:unauthorized";
+
 export function getApiUrl(): string {
   const url = env.NEXT_PUBLIC_API_URL;
   if (url.startsWith("http")) {
@@ -41,6 +43,9 @@ export async function request<T = any>(
     },
     ...requestInit,
   });
+  if (response.status === 401 && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+  }
   const responseText = await response.text();
   if (!responseText) {
     return undefined as T;

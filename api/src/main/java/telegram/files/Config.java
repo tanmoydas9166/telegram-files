@@ -24,6 +24,8 @@ public class Config {
 
     public static final String APP_ROOT = System.getenv("APP_ROOT");
 
+    public static final String AUTH_PASSWORD = System.getenv("AUTH_PASSWORD");
+
     public static final String DB_TYPE = StrUtil.blankToDefault(System.getenv("DB_TYPE"), "sqlite");
 
     public static final String DB_HOST = System.getenv("DB_HOST");

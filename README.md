@@ -77,6 +77,7 @@ docker run -d \
   -e APP_ROOT=${APP_ROOT:-/app/data} \
   -e TELEGRAM_API_ID=${TELEGRAM_API_ID} \
   -e TELEGRAM_API_HASH=${TELEGRAM_API_HASH} \
+  -e AUTH_PASSWORD=${AUTH_PASSWORD} \
   -p 6543:80 \
   -v ./data:/app/data \
   ghcr.io/jarvis2f/telegram-files:latest
@@ -89,6 +90,8 @@ Copy [docker-compose.yaml](docker-compose.yaml) and [.env.example](.env.example)
 ```sh
 docker-compose up -d
 ```
+
+Set `AUTH_PASSWORD` in your `.env` file to require the password before the website or API can be accessed. Authentication is disabled when the value is empty.
 
 **Install on unRaid**
 

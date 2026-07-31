@@ -34,6 +34,8 @@ import telegram.files.repository.SettingAutoRecords;
 import telegram.files.repository.SettingKey;
 import telegram.files.repository.SettingRecord;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -54,6 +56,8 @@ public class HttpVerticle extends AbstractVerticle {
     private final FileRouteHandler fileRouteHandler = new FileRouteHandler();
 
     private static final String SESSION_COOKIE_NAME = "tf";
+
+    private static final String AUTHENTICATED_SESSION_KEY = "authenticated";
 
     @Override
     public void start(Promise<Void> startPromise) {
@@ -106,8 +110,7 @@ public class HttpVerticle extends AbstractVerticle {
                     .setCookieSameSite(CookieSameSite.STRICT);
         } else {
             sessionHandler
-                    .setCookieSameSite(CookieSameSite.NONE)
-                    .setCookieSecureFlag(true);
+                    .setCookieSameSite(CookieSameSite.LAX);
         }
         router.route()
                 .handler(sessionHandler)
@@ -136,6 +139,11 @@ public class HttpVerticle extends AbstractVerticle {
 
         router.get("/").handler(ctx -> ctx.response().end("Hello World!"));
         router.get("/health").handler(HealthCheckHandler.createWithHealthChecks(hc));
+        router.get("/auth/status").handler(this::handleAuthStatus);
+        router.post("/auth/login").handler(this::handleAuthLogin);
+
+        router.route().handler(this::requireAuthentication);
+
         router.get("/version").handler(ctx -> ctx.json(new JsonObject().put("version", Start.VERSION)));
         router.route("/ws").handler(this::handleWebSocket);
 
@@ -193,6 +201,72 @@ public class HttpVerticle extends AbstractVerticle {
                             .end(JsonObject.of("error", throwable == null ? "☹️Sorry! Not today." : throwable.getMessage()).encode());
                 });
         return router;
+    }
+
+    private void handleAuthStatus(RoutingContext ctx) {
+        boolean required = StrUtil.isNotBlank(Config.AUTH_PASSWORD);
+        ctx.response()
+                .putHeader("Content-Type", "application/json")
+                .putHeader("Cache-Control", "no-store")
+                .end(JsonObject.of(
+                        "required", required,
+                        "authenticated", !required || isAuthenticated(ctx)
+                ).encode());
+    }
+
+    private void handleAuthLogin(RoutingContext ctx) {
+        if (StrUtil.isBlank(Config.AUTH_PASSWORD)) {
+            ctx.response()
+                    .putHeader("Content-Type", "application/json")
+                    .putHeader("Cache-Control", "no-store")
+                    .end(JsonObject.of("authenticated", true).encode());
+            return;
+        }
+
+        JsonObject body = ctx.body().asJsonObject();
+        String password = body == null ? null : body.getString("password");
+        if (!passwordMatches(password)) {
+            ctx.response()
+                    .setStatusCode(401)
+                    .putHeader("Content-Type", "application/json")
+                    .putHeader("Cache-Control", "no-store")
+                    .end(JsonObject.of("error", "Incorrect password").encode());
+            return;
+        }
+
+        ctx.session().regenerateId();
+        ctx.session().put(AUTHENTICATED_SESSION_KEY, true);
+        ctx.response()
+                .putHeader("Content-Type", "application/json")
+                .putHeader("Cache-Control", "no-store")
+                .end(JsonObject.of("authenticated", true).encode());
+    }
+
+    private void requireAuthentication(RoutingContext ctx) {
+        if (StrUtil.isBlank(Config.AUTH_PASSWORD) || isAuthenticated(ctx)) {
+            ctx.next();
+            return;
+        }
+
+        ctx.response()
+                .setStatusCode(401)
+                .putHeader("Content-Type", "application/json")
+                .putHeader("Cache-Control", "no-store")
+                .end(JsonObject.of("error", "Authentication required").encode());
+    }
+
+    private boolean isAuthenticated(RoutingContext ctx) {
+        return Boolean.TRUE.equals(ctx.session().get(AUTHENTICATED_SESSION_KEY));
+    }
+
+    private boolean passwordMatches(String password) {
+        if (password == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                Config.AUTH_PASSWORD.getBytes(StandardCharsets.UTF_8),
+                password.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     public Future<Void> initTelegramVerticles() {
